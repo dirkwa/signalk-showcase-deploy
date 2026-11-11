@@ -54,6 +54,18 @@ jobs:
       - name: Build the demo plugin, charts and tidal data
         working-directory: ./fly_io/latest_signalk_org
         run: node build-assets.ts "$SK_VERSION"
+      # The history (signalk-parquet) lives on a volume of this app only, so
+      # it survives a deploy; the fly.toml in the server repo has none.
+      - name: Keep the history on a volume
+        working-directory: ./fly_io/latest_signalk_org
+        run: |
+          cat >> fly.toml <<'TOML'
+
+          [mounts]
+            source = "history"
+            destination = "/home/node/history"
+            initial_size = "1gb"
+          TOML
       - name: Deploy
         working-directory: ./fly_io/latest_signalk_org
         env:
