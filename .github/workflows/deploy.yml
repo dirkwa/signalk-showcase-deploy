@@ -58,7 +58,13 @@ jobs:
       # it survives a deploy; the fly.toml in the server repo has none.
       - name: Keep the history on a volume
         working-directory: ./fly_io/latest_signalk_org
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
+          if ! flyctl volumes list -a "$FLY_APP" --json | jq -e 'any(.[]; .name == "history")' > /dev/null; then
+            region=$(flyctl machines list -a "$FLY_APP" --json | jq -r '.[0].region')
+            flyctl volumes create history -a "$FLY_APP" -r "$region" -s 1 -y
+          fi
           cat >> fly.toml <<'TOML'
 
           [mounts]
