@@ -1,7 +1,8 @@
 name: Show the showcase logs
 
-# Prints the app's recent log lines and machine state, for when the demo
-# stops answering and nobody is at a desktop to open the Fly dashboard.
+# Prints the app's machine state, its history volume and recent log lines,
+# for when the demo misbehaves and nobody is at a desktop to open the Fly
+# dashboard.
 
 on:
   workflow_dispatch:
@@ -26,7 +27,17 @@ jobs:
           flyctl status --app "$FLY_APP"
           flyctl machines list --app "$FLY_APP"
           flyctl volumes list --app "$FLY_APP"
+      - name: History volume
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl ssh console --app "$FLY_APP" -C "df -h /home/node/history" || true
+          flyctl ssh console --app "$FLY_APP" -C "ls -la /home/node/history" || true
       - name: Recent log lines
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl logs --app "$FLY_APP" --no-tail
+        # the radar tracker and request lines drown everything else
+        run: |
+          flyctl logs --app "$FLY_APP" --no-tail \
+            | grep -v -e 'mayara::radar::target::tracker' -e '\] *.\[0mGET ' -e '\] *.\[0mPOST ' \
+            || true
