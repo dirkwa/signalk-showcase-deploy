@@ -1,6 +1,6 @@
 name: Deploy the Signal K showcase
 
-# Builds fly_io/latest_signalk_org from dirkwa/signalk-server's
+# Builds fly_io/demo_signalk_org from dirkwa/signalk-server's
 # dirk-demo-deploy branch and deploys it to Dirk's Fly organisation.
 
 on:
@@ -64,7 +64,7 @@ jobs:
             flyctl apps create "$FLY_APP" --org "$FLY_ORG"
           fi
       - name: Build the demo plugin, charts and tidal data
-        working-directory: ./fly_io/latest_signalk_org
+        working-directory: ./fly_io/demo_signalk_org
         run: node build-assets.ts "$SK_VERSION"
       # npm pack builds the webapp and the helper (prepack); the demo config
       # then installs that package instead of the release on npm.
@@ -74,14 +74,14 @@ jobs:
           cd freeboard-src
           npm ci --no-audit --no-fund
           tgz=$(npm pack --silent | tail -n 1)
-          mv "$tgz" ../fly_io/latest_signalk_org/config/freeboard-sk.tgz
-          cd ../fly_io/latest_signalk_org/config
+          mv "$tgz" ../fly_io/demo_signalk_org/config/freeboard-sk.tgz
+          cd ../fly_io/demo_signalk_org/config
           jq '.dependencies["@signalk/freeboard-sk"] = "file:freeboard-sk.tgz"' package.json > package.json.new
           mv package.json.new package.json
       # The history (signalk-parquet) lives on a volume of this app only, so
       # it survives a deploy; the fly.toml in the server repo has none.
       - name: Keep the history on a volume
-        working-directory: ./fly_io/latest_signalk_org
+        working-directory: ./fly_io/demo_signalk_org
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
@@ -97,7 +97,7 @@ jobs:
             initial_size = "1gb"
           TOML
       - name: Deploy
-        working-directory: ./fly_io/latest_signalk_org
+        working-directory: ./fly_io/demo_signalk_org
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         # A new DEMO_BUILD per run makes the builder install the newest
