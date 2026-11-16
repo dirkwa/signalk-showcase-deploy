@@ -8,6 +8,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy to the showcase app; off only builds the image folder as an artifact'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -57,6 +62,7 @@ jobs:
           path: freeboard-src
           persist-credentials: false
       - name: Create the Fly app if it is missing
+        if: inputs.deploy != false
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
@@ -80,7 +86,15 @@ jobs:
           mv package.json.new package.json
       # The history (signalk-parquet) lives on a volume of this app only, so
       # it survives a deploy; the fly.toml in the server repo has none.
+      - name: Upload the image folder
+        if: inputs.deploy == false
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: demo_signalk_org
+          path: fly_io/demo_signalk_org
+          include-hidden-files: true
       - name: Keep the history on a volume
+        if: inputs.deploy != false
         working-directory: ./fly_io/demo_signalk_org
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -97,6 +111,7 @@ jobs:
             initial_size = "1gb"
           TOML
       - name: Deploy
+        if: inputs.deploy != false
         working-directory: ./fly_io/demo_signalk_org
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
