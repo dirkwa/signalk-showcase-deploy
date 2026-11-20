@@ -1,18 +1,11 @@
-name: Deploy the Signal K showcase
+name: Build the demo.signalk.org image folder
 
 # Builds fly_io/demo_signalk_org from dirkwa/signalk-server's
-# dirk-demo-deploy branch and deploys it to Dirk's Fly organisation.
+# dirk-demo-deploy branch (charts, tidal data, demo plugins) and uploads it
+# as an artifact, which is then deployed to demo.signalk.org with flyctl.
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      deploy:
-        description: 'Deploy to the showcase app; off only builds the image folder as an artifact'
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -23,20 +16,12 @@ concurrency:
   queue: max
 
 env:
-  FLY_ORG: victron-energy
-  FLY_APP: signalk-showcase
-  # The server image the demo runs on: a release tag, or master-24.x for
-  # upstream master. The chart conversion installs the server from npm, so
-  # it takes a released version.
-  SK_IMAGE_TAG: master-24.x
+  # The chart conversion installs the server from npm, so it takes a
+  # released version.
   SK_VERSION: v2.37.0
-  # Freeboard-SK built from this branch replaces the npm release, so the
-  # demo can show changes still waiting for review. Empty uses npm.
-  FREEBOARD_REPO: dirkwa/freeboard-sk
-  FREEBOARD_REF: mets-demo
 
 jobs:
-  deploy:
+  build:
     if: github.repository == 'dirkwa/signalk-showcase-deploy'
     runs-on: ubuntu-latest
     steps:
@@ -46,75 +31,17 @@ jobs:
           repository: dirkwa/signalk-server
           ref: dirk-demo-deploy
           persist-credentials: false
-      - name: Setup flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
       - name: Setup Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           package-manager-cache: false
-      - name: Checkout Freeboard-SK
-        if: env.FREEBOARD_REF != ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ${{ env.FREEBOARD_REPO }}
-          ref: ${{ env.FREEBOARD_REF }}
-          path: freeboard-src
-          persist-credentials: false
-      - name: Create the Fly app if it is missing
-        if: inputs.deploy != false
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          if ! flyctl status -a "$FLY_APP" > /dev/null 2>&1; then
-            flyctl apps create "$FLY_APP" --org "$FLY_ORG"
-          fi
       - name: Build the demo plugin, charts and tidal data
         working-directory: ./fly_io/demo_signalk_org
         run: node build-assets.ts "$SK_VERSION"
-      # npm pack builds the webapp and the helper (prepack); the demo config
-      # then installs that package instead of the release on npm.
-      - name: Build Freeboard-SK from ${{ env.FREEBOARD_REF }}
-        if: env.FREEBOARD_REF != ''
-        run: |
-          cd freeboard-src
-          npm ci --no-audit --no-fund
-          tgz=$(npm pack --silent | tail -n 1)
-          mv "$tgz" ../fly_io/demo_signalk_org/config/freeboard-sk.tgz
-          cd ../fly_io/demo_signalk_org/config
-          jq '.dependencies["@signalk/freeboard-sk"] = "file:freeboard-sk.tgz"' package.json > package.json.new
-          mv package.json.new package.json
-      # The history (signalk-parquet) lives on a volume of this app only, so
-      # it survives a deploy; the fly.toml in the server repo has none.
       - name: Upload the image folder
-        if: inputs.deploy == false
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: demo_signalk_org
           path: fly_io/demo_signalk_org
           include-hidden-files: true
-      - name: Keep the history on a volume
-        if: inputs.deploy != false
-        working-directory: ./fly_io/demo_signalk_org
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          if ! flyctl volumes list -a "$FLY_APP" --json | jq -e 'any(.[]; .name == "history")' > /dev/null; then
-            region=$(flyctl machines list -a "$FLY_APP" --json | jq -r '.[0].region')
-            flyctl volumes create history -a "$FLY_APP" -r "$region" -s 1 -y
-          fi
-          cat >> fly.toml <<'TOML'
-
-          [mounts]
-            source = "history"
-            destination = "/home/node/history"
-            initial_size = "1gb"
-          TOML
-      - name: Deploy
-        if: inputs.deploy != false
-        working-directory: ./fly_io/demo_signalk_org
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        # A new DEMO_BUILD per run makes the builder install the newest
-        # plugin releases instead of reusing an earlier install.
-        run: flyctl deploy --remote-only -a "$FLY_APP" --build-arg SK_VERSION="$SK_IMAGE_TAG" --build-arg DEMO_BUILD="$GITHUB_RUN_ID" --ha=false
